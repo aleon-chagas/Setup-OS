@@ -1,0 +1,436 @@
+---
+- name: Setup WSL2 Ubuntu 24.04 LTS (DevOps/SRE)
+  hosts: localhost
+  become: true
+  gather_facts: true
+
+  vars:
+    user_name: "{{ lookup('env', 'USER') }}"
+    user_home: "/home/{{ user_name }}"
+
+    base_packages:
+      - apt-transport-https
+      - ca-certificates
+      - lsb-release
+      - software-properties-common
+      - nala
+      - gpg
+      - build-essential
+      - zsh
+
+    util_packages:
+      - fuse
+      - wget
+      - vim
+      - git
+      - jq
+      - httpie
+      - htop
+      - iftop
+      - iotop
+      - glances
+      - ncdu
+      - tree
+      - bash-completion
+      - plocate
+      - mtr
+      - nmap
+      - neofetch
+      - net-tools
+      - unzip
+      - tmux
+      - dnsutils
+      - btop
+      - speedtest-cli
+      - mysql-client
+      - ansible-lint
+      - fonts-powerline
+      - fonts-firacode
+      - fzf
+      - command-not-found
+      - util-linux
+      - nodejs
+      - npm
+      - whois
+
+  pre_tasks:
+    - name: Update APT cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      tags: [always]
+
+    - name: Install prerequisite packages
+      apt:
+        name:
+          - curl
+          - gpg
+        state: present
+      tags: [always]
+
+  tasks:
+
+    ###########################################################################
+    # System Base
+    ###########################################################################
+    - name: System Base Installation
+      block:
+        - name: Install base and utility packages
+          apt:
+            name: "{{ base_packages + util_packages }}"
+            state: present
+            update_cache: yes
+
+        - name: Upgrade all system packages
+          apt:
+            upgrade: dist
+          tags: [base]
+
+    ###########################################################################
+    # Docker | Engine Optional (Commented Out) - Use with Docker Desktop on Windows
+    ###########################################################################
+    # - name: Docker Installation
+    #   block:
+    #     - name: Create keyrings directory
+    #       file:
+    #         path: /etc/apt/keyrings
+    #         state: directory
+    #         mode: '0755'
+
+    #     - name: Download Docker GPG key
+    #       shell: curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    #       args:
+    #         creates: /etc/apt/keyrings/docker.gpg
+
+    #     - name: Add Docker repository
+    #       apt_repository:
+    #         repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    #         filename: docker
+    #         state: present
+    #         update_cache: yes
+
+    #     - name: Install Docker Engine
+    #       apt:
+    #         name:
+    #           - docker-ce
+    #           - docker-ce-cli
+    #           - containerd.io
+    #           - docker-compose-plugin
+    #           - docker-buildx-plugin
+    #         state: present
+
+    #     - name: Enable Docker
+    #       service:
+    #         name: docker
+    #         enabled: yes
+    #         state: started
+
+    #     - name: Add user to the docker group
+    #       user:
+    #         name: "{{ user_name }}"
+    #         groups: docker
+    #         append: yes
+    #       tags: [docker]
+
+    ###########################################################################
+    # Kubernetes | Minikube Optional (Commented Out) - Use with Docker Desktop on Windows
+    ###########################################################################
+    - name: Kubernetes Tools Installation
+      block:
+        - name: Download Kubernetes GPG key
+          get_url:
+            url: https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key
+            dest: /etc/apt/keyrings/kubernetes-apt-keyring.asc
+            mode: '0644'
+
+        - name: Add Kubernetes repository
+          apt_repository:
+            repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.asc] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /"
+            filename: kubernetes
+            state: present
+            update_cache: yes
+
+        - name: Install kubectl
+          apt:
+            name: kubectl
+            state: present
+
+        - block:
+            - name: Download K9s package
+              get_url:
+                url: https://github.com/derailed/k9s/releases/latest/download/k9s_linux_amd64.deb
+                dest: /tmp/k9s_linux_amd64.deb
+
+            - name: Install K9s
+              apt:
+                deb: /tmp/k9s_linux_amd64.deb
+
+            - name: Remove K9s package
+              file:
+                path: /tmp/k9s_linux_amd64.deb
+                state: absent
+
+        - name: Install kubectx
+          get_url:
+            url: https://github.com/ahmetb/kubectx/releases/latest/download/kubectx
+            dest: /usr/local/bin/kubectx
+            mode: '0755'
+
+        - name: Install kubens
+          get_url:
+            url: https://github.com/ahmetb/kubectx/releases/latest/download/kubens
+            dest: /usr/local/bin/kubens
+            mode: '0755'
+
+        # - name: Install minikube
+        #   get_url:
+        #     url: https://github.com/kubernetes/minikube/releases/latest/download/minikube-linux-amd64
+        #     dest: /usr/local/bin/minikube
+        #     mode: '0755'
+      tags: [k8s]
+
+    ###########################################################################
+    # Cloud CLIs and DevOps Tools
+    ###########################################################################
+    - name: DevOps Tools Installation
+      block:
+        - name: Add Microsoft GPG key
+          shell: "curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg"
+          args:
+            creates: /etc/apt/keyrings/microsoft.gpg
+          changed_when: false
+
+        - name: Add PowerShell repository
+          apt_repository:
+            repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/ubuntu/24.04/prod noble main"
+            state: present
+            filename: powershell
+            update_cache: yes
+
+        - name: Install PowerShell
+          apt:
+            name: powershell
+            state: present
+
+        - name: Install Azure CLI
+          shell: curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+          args:
+            creates: /usr/bin/az
+
+        - name: Install kubectl via Azure CLI
+          shell: az aks install-cli
+          args:
+            creates: /usr/local/bin/kubectl
+
+        - name: Install AWS CLI v2
+          shell: |
+            curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip"
+            unzip -q -o /tmp/awscliv2.zip -d /tmp/aws-cli-install
+            /tmp/aws-cli-install/aws/install --update
+            rm -rf /tmp/awscliv2.zip /tmp/aws-cli-install
+          args:
+            creates: /usr/local/bin/aws
+
+        - name: Install Google Cloud SDK
+          shell: |
+            echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+            curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
+            apt-get update && apt-get install -y google-cloud-cli
+          args:
+            creates: /usr/bin/gcloud
+
+        - name: Install Helm
+          shell: |
+            curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          args:
+            creates: /usr/local/bin/helm
+
+        - name: Install Flux CLI
+          shell: |
+            curl -s https://fluxcd.io/install.sh | bash
+          args:
+            creates: /usr/local/bin/flux
+
+        - name: Install Terraform via HashiCorp repo
+          block:
+            - name: Add HashiCorp GPG key
+              shell: "curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /etc/apt/keyrings/hashicorp.gpg"
+              args:
+                creates: /etc/apt/keyrings/hashicorp.gpg
+              changed_when: false
+
+            - name: Add HashiCorp repository
+              apt_repository:
+                repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/hashicorp.gpg] https://apt.releases.hashicorp.com {{ ansible_distribution_release }} main"
+                state: present
+                filename: hashicorp
+                update_cache: yes
+
+            - name: Install Terraform
+              apt:
+                name: terraform
+                state: present
+
+        - name: Install yq
+          get_url:
+            url: https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+            dest: /usr/local/bin/yq
+            mode: '0755'
+
+        - name: Check if vagrant is installed
+          ansible.builtin.stat:
+            path: /usr/bin/vagrant
+          register: vagrant_stat
+
+        - block:
+            - name: Download Vagrant
+              ansible.builtin.get_url:
+                url: "https://releases.hashicorp.com/vagrant/2.4.1/vagrant_2.4.1-1_amd64.deb"
+                dest: /tmp/vagrant.deb
+
+            - name: Install Vagrant
+              ansible.builtin.apt:
+                deb: /tmp/vagrant.deb
+
+            - name: Remove Vagrant package
+              ansible.builtin.file:
+                path: /tmp/vagrant.deb
+                state: absent
+          when: not vagrant_stat.stat.exists
+
+        - name: Install ArgoCD CLI
+          block:
+            - name: Download ArgoCD CLI binary
+              ansible.builtin.get_url:
+                url: "https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64"
+                dest: "/tmp/argocd"
+                mode: "0755"
+
+            - name: Move ArgoCD CLI to /usr/local/bin
+              ansible.builtin.command: mv /tmp/argocd /usr/local/bin/argocd
+
+            - name: Verify ArgoCD CLI installation
+              ansible.builtin.command: argocd version --client
+              register: argocd_version
+              changed_when: false
+
+            - name: Show installed ArgoCD CLI version
+              ansible.builtin.debug:
+                msg: "{{ argocd_version.stdout }}"
+          tags: [devtools]
+
+    ###########################################################################
+    # MongoDB Client
+    ###########################################################################
+    - name: MongoDB Client Installation
+      block:
+        - name: Import MongoDB public GPG key
+          ansible.builtin.shell: >
+            curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc |
+            gpg --dearmor -o /usr/share/keyrings/mongodb-server-8.0.gpg
+          args:
+            creates: /usr/share/keyrings/mongodb-server-8.0.gpg
+
+        - name: Add MongoDB 8.0 repository
+          ansible.builtin.apt_repository:
+            repo: "deb [arch=amd64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg] https://repo.mongodb.org/apt/ubuntu {{ ansible_distribution_release }}/mongodb-org/8.0 multiverse"
+            state: present
+            filename: mongodb-org-8.0
+            update_cache: yes
+
+        - name: Install MongoDB tools and mongosh
+          ansible.builtin.apt:
+            name:
+              # Nomes de pacotes ajustados para MongoDB 8.0
+              - mongodb-database-tools
+              - mongodb-mongosh
+            state: present
+      tags: [mongodb]
+
+    ###########################################################################
+    # User Environment (Oh-My-Zsh and Powerlevel10k)
+    ###########################################################################
+    - name: Install Oh-My-Zsh
+      shell: |
+        CHSH=no RUNZSH=no sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" '' --unattended
+      args:
+        creates: "{{ user_home }}/.oh-my-zsh"
+      become_user: "{{ user_name }}"
+      tags: [user_env]
+
+    - name: Clone Powerlevel10k into Oh-My-Zsh themes directory
+      git:
+        repo: https://github.com/romkatv/powerlevel10k.git
+        dest: "{{ user_home }}/.oh-my-zsh/custom/themes/powerlevel10k"
+        version: master
+        update: no
+      become_user: "{{ user_name }}"
+      tags: [user_env]
+
+    - name: Configure Powerlevel10k as theme in .zshrc
+      lineinfile:
+        path: "{{ user_home }}/.zshrc"
+        regexp: '^ZSH_THEME='
+        line: 'ZSH_THEME="powerlevel10k/powerlevel10k"'
+        create: yes
+      become_user: "{{ user_name }}"
+      tags: [user_env]
+
+    - name: Change shell to ZSH
+      user:
+        name: "{{ user_name }}"
+        shell: /bin/zsh
+      tags: [user_env]
+
+    - name: Clone zsh-syntax-highlighting plugin
+      git:
+        repo: https://github.com/zsh-users/zsh-syntax-highlighting.git
+        dest: "{{ user_home }}/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
+        version: master
+        update: no
+      become_user: "{{ user_name }}"
+      tags: [user_env]
+
+    - name: Clone zsh-autosuggestions plugin
+      git:
+        repo: https://github.com/zsh-users/zsh-autosuggestions.git
+        dest: "{{ user_home }}/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
+        version: master
+        update: no
+      become_user: "{{ user_name }}"
+      tags: [user_env]
+
+    - name: Clone zsh-completions plugin
+      git:
+        repo: https://github.com/zsh-users/zsh-completions.git
+        dest: "{{ user_home }}/.oh-my-zsh/custom/plugins/zsh-completions"
+        version: master
+        update: no
+      become_user: "{{ user_name }}"
+      tags: [user_env]
+
+    ###########################################################################
+    # Finalization
+    ###########################################################################
+    - name: Allow sudo without password for members of the sudo group
+      become: true
+      lineinfile:
+        path: /etc/sudoers
+        regexp: '^%sudo'
+        line: '%sudo ALL=(ALL:ALL) NOPASSWD:ALL'
+        validate: 'visudo -cf %s'
+        state: present
+        backup: yes
+
+    - name: Finalization Tasks
+      block:
+        - name: Update locate database
+          command: updatedb
+          changed_when: false
+          failed_when: false
+
+        - name: Clean up unnecessary packages
+          apt:
+            autoclean: yes
+            autoremove: yes
+          tags: [cleanup]
